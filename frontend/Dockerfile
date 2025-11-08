@@ -22,28 +22,8 @@ FROM nginx:alpine
 # Copier les fichiers buildés
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Configuration Nginx pour React Router
-RUN echo 'server { \
-    listen 80; \
-    server_name _; \
-    root /usr/share/nginx/html; \
-    index index.html; \
-    \
-    location / { \
-        try_files $uri $uri/ /index.html; \
-        add_header Cache-Control "no-cache"; \
-    } \
-    \
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ { \
-        expires 1y; \
-        add_header Cache-Control "public, immutable"; \
-    } \
-    \
-    gzip on; \
-    gzip_vary on; \
-    gzip_min_length 1024; \
-    gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json; \
-}' > /etc/nginx/conf.d/default.conf
+# La configuration Nginx sera montée via volume dans docker-compose
+# (voir nginx-proxy.conf)
 
 EXPOSE 80
 
