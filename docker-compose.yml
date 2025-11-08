@@ -50,8 +50,8 @@ services:
     platform: linux/arm64
     container_name: intranet-frontend
     environment:
-      - VITE_API_URL=http://192.168.1.95/api
-      - VITE_WS_URL=ws://192.168.1.95/ws
+      - VITE_API_URL=/api
+      - VITE_WS_URL=/ws
     ports:
       - "80:80"
     volumes:
