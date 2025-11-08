@@ -1,0 +1,101 @@
+import axios from 'axios';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+const api = axios.create({
+  baseURL: `${API_URL}/api`,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Intercepteur pour ajouter le token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Intercepteur pour gérer les erreurs
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+export default api;
+
+// Auth API
+export const authAPI = {
+  login: (email: string, password: string) =>
+    api.post('/auth/login', { email, password }),
+  getProfile: () => api.get('/auth/me'),
+};
+
+// Messages API
+};
+
+// Sales API
+export const salesAPI = {
+  getAll: (filters?: any) => api.get('/sales', { params: filters }),
+  getStats: (filters?: any) => api.get('/sales/stats', { params: filters }),
+  create: (data: any) => api.post('/sales', data),
+  update: (id: number, data: any) => api.put(`/sales/${id}`, data),
+  delete: (id: number) => api.delete(`/sales/${id}`),
+  uploadFile: (id: number, type: 'contract' | 'invoice', file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post(`/sales/${id}/upload/${type}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
+  downloadFile: (id: number, type: 'contract' | 'invoice') =>
+    api.get(`/sales/${id}/download/${type}`, { responseType: 'blob' }),
+  deleteFile: (id: number, type: 'contract' | 'invoice') =>
+    api.delete(`/sales/${id}/file/${type}`),
+};
+
+// Admin API
+export const adminAPI = {
+  getUsers: () => api.get('/admin/users'),
+  createUser: (data: any) => api.post('/admin/users', data),
+  updateUser: (id: number, data: any) => api.put(`/admin/users/${id}`, data),
+  deleteUser: (id: number) => api.delete(`/admin/users/${id}`),
+  getActivityLogs: (limit = 100, offset = 0) =>
+    api.get('/admin/activity-logs', { params: { limit, offset } }),
+  getDepartments: () => api.get('/admin/departments'),
+  createDepartment: (name: string, description: string) =>
+    api.post('/admin/departments', { name, description }),
+};
+
+// Drive API
+export const driveAPI = {
+  getFolders: () => api.get('/drive/folders'),
+  createFolder: (data: any) => api.post('/drive/folders', data),
+  updateFolder: (id: number, data: any) => api.put(`/drive/folders/${id}`, data),
+  deleteFolder: (id: number) => api.delete(`/drive/folders/${id}`),
+  getFolderFiles: (folderId: number) => api.get(`/drive/folders/${folderId}/files`),
+  uploadFile: (folderId: number, file: File, description?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (description) formData.append('description', description);
+    return api.post(`/drive/folders/${folderId}/files`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
+  downloadFile: (fileId: number) =>
+    api.get(`/drive/files/${fileId}/download`, { responseType: 'blob' }),
+  deleteFile: (fileId: number) => api.delete(`/drive/files/${fileId}`),
+  searchFiles: (query: string) => api.get('/drive/search', { params: { query } }),
+};

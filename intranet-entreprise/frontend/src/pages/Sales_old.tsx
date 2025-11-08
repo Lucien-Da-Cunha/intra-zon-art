@@ -1,0 +1,689 @@
+import { useState, useEffect } from 'react';
+import { useAuthStore } from '../store/authStore';
+import { salesAPI, adminAPI } from '../api/api';
+
+interface Sale {
+  id: number;
+  customer_name: string;
+  product_service: string;
+  amount: number;
+  status: 'pending' | 'completed' | 'cancelled';
+  sale_date: string;
+  description?: string;
+  user_id: number;
+  first_name?: string;
+  last_name?: string;
+  contract_file_name?: string;
+  contract_file_path?: string;
+  invoice_file_name?: string;
+  invoice_file_path?: string;
+}
+
+interface User {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
+interface Stats {
+  totalRevenue: number;
+  totalSales: number;
+  averageSale: number;
+  pendingAmount: number;
+}
+
+function Sales() {
+  const { user } = useAuthStore();
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [showModal, setShowModal] = useState(false);
+  const [editingSale, setEditingSale] = useState<Sale | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [formData, setFormData] = useState({
+    customer_name: '',
+    product_service: '',
+    amount: '',
+    status: 'pending' as 'pending' | 'completed' | 'cancelled',
+    description: '',
+    sale_date: new Date().toISOString().split('T')[0],
+    user_id: 0
+  });
+
+  const canManage = user?.role === 'admin' || user?.role === 'manager';
+
+  useEffect(() => {
+    loadSales();
+    loadStats();
+    if (canManage) {
+      loadUsers();
+    }
+  }, []);
+
+  const loadSales = async () => {
+    try {
+      const response = await salesAPI.getAll();
+      setSales(response.data.sales || response.data);
+    } catch (error) {
+      console.error('Erreur chargement ventes:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadStats = async () => {
+    try {
+      const response = await salesAPI.getStats();
+      setStats(response.data);
+    } catch (error) {
+      console.error('Erreur chargement stats:', error);
+    }
+  };
+
+  const loadUsers = async () => {
+    try {
+      const response = await adminAPI.getUsers();
+      setUsers(response.data);
+    } catch (error) {
+      console.error('Erreur chargement utilisateurs:', error);
+    }
+  };
+
+  const openCreateModal = () => {
+    setEditingSale(null);
+    setFormData({
+      customer_name: '',
+      product_service: '',
+      amount: '',
+      status: 'pending',
+      description: '',
+      sale_date: new Date().toISOString().split('T')[0],
+      user_id: canManage && users.length > 0 ? users[0].id : (user?.id || 0)
+    });
+    setShowModal(true);
+  };
+
+  const openEditModal = (sale: Sale) => {
+    setEditingSale(sale);
+    setFormData({
+      customer_name: sale.customer_name,
+      product_service: sale.product_service,
+      amount: sale.amount.toString(),
+      status: sale.status,
+      description: sale.description || '',
+      sale_date: new Date(sale.sale_date).toISOString().split('T')[0],
+      user_id: sale.user_id
+    });
+    setShowModal(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    try {
+      const data = {
+        ...formData,
+        amount: parseFloat(formData.amount),
+        customerName: formData.customer_name,
+        productService: formData.product_service,
+        saleDate: formData.sale_date
+      };
+
+      if (editingSale) {
+        await salesAPI.update(editingSale.id, data);
+        alert('Vente modifiée avec succès !');
+      } else {
+        await salesAPI.create(data);
+        alert('Vente créée avec succès !');
+      }
+
+      setShowModal(false);
+      loadSales();
+      loadStats();
+    } catch (error: any) {
+      console.error('Erreur sauvegarde vente:', error);
+      alert(error.response?.data?.error || 'Erreur lors de la sauvegarde');
+    }
+  };
+
+  const handleDelete = async (saleId: number, customerName: string) => {
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer la vente de ${customerName} ?`)) {
+      return;
+    }
+
+    try {
+      await salesAPI.delete(saleId);
+      alert('Vente supprimée avec succès !');
+      loadSales();
+      loadStats();
+    } catch (error: any) {
+      console.error('Erreur suppression vente:', error);
+      alert(error.response?.data?.error || 'Erreur lors de la suppression');
+    }
+  };
+
+  const handleFileUpload = async (saleId: number, type: 'contract' | 'invoice', file: File) => {
+    try {
+      await salesAPI.uploadFile(saleId, type, file);
+      alert(`${type === 'contract' ? 'Contrat' : 'Facture'} uploadé avec succès !`);
+      loadSales();
+    } catch (error: any) {
+      console.error('Erreur upload fichier:', error);
+      alert(error.response?.data?.error || 'Erreur lors de l\'upload');
+    }
+  };
+
+  const handleFileDownload = async (saleId: number, type: 'contract' | 'invoice', fileName: string) => {
+    try {
+      const response = await salesAPI.downloadFile(saleId, type);
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error: any) {
+      console.error('Erreur téléchargement fichier:', error);
+      alert(error.response?.data?.error || 'Erreur lors du téléchargement');
+    }
+  };
+
+  const handleFileDelete = async (saleId: number, type: 'contract' | 'invoice') => {
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer ce ${type === 'contract' ? 'contrat' : 'facture'} ?`)) {
+      return;
+    }
+
+    try {
+      await salesAPI.deleteFile(saleId, type);
+      alert(`${type === 'contract' ? 'Contrat' : 'Facture'} supprimé avec succès !`);
+      loadSales();
+    } catch (error: any) {
+      console.error('Erreur suppression fichier:', error);
+      alert(error.response?.data?.error || 'Erreur lors de la suppression');
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const styles = {
+      completed: { bg: '#10b981', text: '✅ Complété' },
+      pending: { bg: '#f59e0b', text: '⏳ En attente' },
+      cancelled: { bg: '#ef4444', text: '❌ Annulé' }
+    };
+    const style = styles[status as keyof typeof styles] || styles.pending;
+    return (
+      <span style={{
+        padding: '4px 8px',
+        borderRadius: '4px',
+        fontSize: '12px',
+        fontWeight: 'bold',
+        backgroundColor: style.bg,
+        color: 'white'
+      }}>
+        {style.text}
+      </span>
+    );
+  };
+
+  return (
+    <div className="container">
+      <h1>Chiffre d'affaires</h1>
+      
+      <div className="card">
+        <h2>Statistiques de vente</h2>
+        {loading || !stats ? (
+          <p>Chargement...</p>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+            <div>
+              <p style={{ fontSize: '14px', color: '#666' }}>Chiffre d'affaires total</p>
+              <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#10b981' }}>
+                {stats.totalRevenue.toLocaleString('fr-FR')} €
+              </p>
+            </div>
+            <div>
+              <p style={{ fontSize: '14px', color: '#666' }}>Nombre de ventes</p>
+              <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#3b82f6' }}>
+                {stats.totalSales}
+              </p>
+            </div>
+            <div>
+              <p style={{ fontSize: '14px', color: '#666' }}>Vente moyenne</p>
+              <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#7c3aed' }}>
+                {stats.averageSale.toLocaleString('fr-FR')} €
+              </p>
+            </div>
+            <div>
+              <p style={{ fontSize: '14px', color: '#666' }}>Montant en attente</p>
+              <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#f59e0b' }}>
+                {stats.pendingAmount.toLocaleString('fr-FR')} €
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+      
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h2 style={{ margin: 0 }}>Historique des ventes</h2>
+          <button 
+            onClick={openCreateModal}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#7c3aed',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontWeight: 'bold'
+            }}
+          >
+            + Ajouter une vente
+          </button>
+        </div>
+
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ backgroundColor: '#f5f5f5' }}>
+              {canManage && <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>Vendeur</th>}
+              <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>Client</th>
+              <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>Produit/Service</th>
+              <th style={{ padding: '12px', textAlign: 'right', borderBottom: '2px solid #ddd' }}>Montant</th>
+              <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>Date</th>
+              <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid #ddd' }}>Statut</th>
+              <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid #ddd' }}>Documents</th>
+              {canManage && <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid #ddd' }}>Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {sales.map((sale) => (
+              <tr key={sale.id} style={{ borderBottom: '1px solid #e0e0e0' }}>
+                {canManage && (
+                  <td style={{ padding: '12px' }}>
+                    {sale.first_name} {sale.last_name}
+                  </td>
+                )}
+                <td style={{ padding: '12px' }}>{sale.customer_name}</td>
+                <td style={{ padding: '12px' }}>{sale.product_service}</td>
+                <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold' }}>
+                  {Number(sale.amount).toLocaleString('fr-FR')} €
+                </td>
+                <td style={{ padding: '12px' }}>
+                  {new Date(sale.sale_date).toLocaleDateString('fr-FR')}
+                </td>
+                <td style={{ padding: '12px', textAlign: 'center' }}>
+                  {getStatusBadge(sale.status)}
+                </td>
+                <td style={{ padding: '12px', textAlign: 'center' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'center' }}>
+                    {/* Contrat */}
+                    <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                      {sale.contract_file_name ? (
+                        <>
+                          <button
+                            onClick={() => handleFileDownload(sale.id, 'contract', sale.contract_file_name!)}
+                            style={{
+                              padding: '4px 8px',
+                              backgroundColor: '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '3px',
+                              cursor: 'pointer',
+                              fontSize: '11px'
+                            }}
+                            title={sale.contract_file_name}
+                          >
+                            Contrat
+                          </button>
+                          <button
+                            onClick={() => handleFileDelete(sale.id, 'contract')}
+                            style={{
+                              padding: '4px 6px',
+                              backgroundColor: '#ef4444',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '3px',
+                              cursor: 'pointer',
+                              fontSize: '11px'
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </>
+                      ) : (
+                        <label style={{ cursor: 'pointer' }}>
+                          <input
+                            type="file"
+                            accept="application/pdf"
+                            style={{ display: 'none' }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleFileUpload(sale.id, 'contract', file);
+                            }}
+                          />
+                          <span style={{
+                            padding: '4px 8px',
+                            backgroundColor: '#6b7280',
+                            color: 'white',
+                            borderRadius: '3px',
+                            fontSize: '11px',
+                            display: 'inline-block'
+                          }}>
+                            + Contrat
+                          </span>
+                        </label>
+                      )}
+                    </div>
+
+                    {/* Facture */}
+                    <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                      {sale.invoice_file_name ? (
+                        <>
+                          <button
+                            onClick={() => handleFileDownload(sale.id, 'invoice', sale.invoice_file_name!)}
+                            style={{
+                              padding: '4px 8px',
+                              backgroundColor: '#3b82f6',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '3px',
+                              cursor: 'pointer',
+                              fontSize: '11px'
+                            }}
+                            title={sale.invoice_file_name}
+                          >
+                            🧾 Facture
+                          </button>
+                          <button
+                            onClick={() => handleFileDelete(sale.id, 'invoice')}
+                            style={{
+                              padding: '4px 6px',
+                              backgroundColor: '#ef4444',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '3px',
+                              cursor: 'pointer',
+                              fontSize: '11px'
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </>
+                      ) : (
+                        <label style={{ cursor: 'pointer' }}>
+                          <input
+                            type="file"
+                            accept="application/pdf"
+                            style={{ display: 'none' }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleFileUpload(sale.id, 'invoice', file);
+                            }}
+                          />
+                          <span style={{
+                            padding: '4px 8px',
+                            backgroundColor: '#6b7280',
+                            color: 'white',
+                            borderRadius: '3px',
+                            fontSize: '11px',
+                            display: 'inline-block'
+                          }}>
+                            + Facture
+                          </span>
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                </td>
+                {canManage && (
+                  <td style={{ padding: '12px', textAlign: 'center' }}>
+                    <button 
+                      onClick={() => openEditModal(sale)}
+                      style={{
+                        padding: '6px 12px',
+                        backgroundColor: '#3b82f6',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        marginRight: '5px'
+                      }}
+                    >
+                      ✏️ Éditer
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(sale.id, sale.customer_name)}
+                      style={{
+                        padding: '6px 12px',
+                        backgroundColor: '#ef4444',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🗑️
+                    </button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {sales.length === 0 && !loading && (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+            Aucune vente enregistrée
+          </div>
+        )}
+      </div>
+
+      {/* Modal Créer/Éditer Vente */}
+      {showModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div className="card" style={{ width: '500px', maxHeight: '90vh', overflow: 'auto' }}>
+            <h2 style={{ marginTop: 0 }}>
+              {editingSale ? '✏️ Modifier la vente' : '➕ Nouvelle vente'}
+            </h2>
+            
+            <form onSubmit={handleSubmit}>
+              {canManage && (
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                    Vendeur *
+                  </label>
+                  <select
+                    required
+                    value={formData.user_id}
+                    onChange={(e) => setFormData({ ...formData, user_id: parseInt(e.target.value) })}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #ddd',
+                      borderRadius: '5px',
+                      fontSize: '14px'
+                    }}
+                  >
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.first_name} {u.last_name} ({u.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                  Nom du client *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.customer_name}
+                  onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
+                  placeholder="Ex: Entreprise ABC"
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '5px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                  Produit/Service *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.product_service}
+                  onChange={(e) => setFormData({ ...formData, product_service: e.target.value })}
+                  placeholder="Ex: Consultation, Formation..."
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '5px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                  Montant (€) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  step="0.01"
+                  min="0"
+                  value={formData.amount}
+                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                  placeholder="Ex: 5000.00"
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '5px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                  Statut *
+                </label>
+                <select
+                  required
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '5px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="pending">En attente</option>
+                  <option value="completed">Complété</option>
+                  <option value="cancelled">Annulé</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                  Date de vente *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={formData.sale_date}
+                  onChange={(e) => setFormData({ ...formData, sale_date: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '5px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                  Description (optionnel)
+                </label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Détails supplémentaires..."
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '5px',
+                    fontSize: '14px',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#f0f0f0',
+                    color: '#333',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#7c3aed',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  {editingSale ? 'Modifier' : 'Créer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default Sales;

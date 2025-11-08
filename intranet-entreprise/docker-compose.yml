@@ -1,0 +1,65 @@
+services:
+  # Base de données PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    platform: linux/arm64
+    container_name: intranet-postgres
+    environment:
+      POSTGRES_USER: intranet
+      POSTGRES_PASSWORD: intranet123
+      POSTGRES_DB: intranet_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U intranet -d intranet_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Backend API avec WebSocket
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    container_name: intranet-backend
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgresql://intranet:intranet123@postgres:5432/intranet_db
+      JWT_SECRET: intranet-secret-key-change-in-production
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+      - ./backend/uploads:/app/uploads
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: npm run dev
+
+  # Frontend React
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    container_name: intranet-frontend
+    environment:
+      - VITE_API_URL=http://localhost:3001
+      - VITE_WS_URL=ws://localhost:3001
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    command: npm run dev
+
+volumes:
+  postgres_data:

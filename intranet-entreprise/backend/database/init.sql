@@ -1,0 +1,222 @@
+-- Création de la base de données intranet
+
+-- Table des départements
+CREATE TABLE IF NOT EXISTS departments (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table des utilisateurs
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'employee', -- admin, manager, employee
+    department_id INTEGER REFERENCES departments(id),
+    avatar_url TEXT,
+    phone VARCHAR(20),
+    position VARCHAR(100),
+    is_active BOOLEAN DEFAULT true,
+    last_login TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table des conversations/groupes de messagerie
+CREATE TABLE IF NOT EXISTS conversations (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255),
+    type VARCHAR(50) NOT NULL, -- private, group, department
+    created_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table de liaison utilisateurs-conversations
+CREATE TABLE IF NOT EXISTS conversation_participants (
+    conversation_id INTEGER REFERENCES conversations(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_read_at TIMESTAMP,
+    PRIMARY KEY (conversation_id, user_id)
+);
+
+-- Table des messages
+CREATE TABLE IF NOT EXISTS messages (
+    id SERIAL PRIMARY KEY,
+    conversation_id INTEGER REFERENCES conversations(id) ON DELETE CASCADE,
+    sender_id INTEGER REFERENCES users(id),
+    content TEXT,
+    is_read BOOLEAN DEFAULT false,
+    attachments JSONB,
+    image_name VARCHAR(255),
+    image_path VARCHAR(500),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table des ventes (chiffre d'affaires)
+CREATE TABLE IF NOT EXISTS sales (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    department_id INTEGER REFERENCES departments(id),
+    customer_name VARCHAR(255),
+    product_service VARCHAR(255) NOT NULL,
+    amount DECIMAL(15, 2) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending', -- pending, completed, cancelled
+    description TEXT,
+    sale_date DATE NOT NULL,
+    contract_file_name VARCHAR(255), -- Nom du fichier PDF du contrat
+    contract_file_path VARCHAR(500), -- Chemin vers le fichier
+    invoice_file_name VARCHAR(255), -- Nom du fichier PDF de la facture
+    invoice_file_path VARCHAR(500), -- Chemin vers la facture
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table des logs d'activité (pour l'admin)
+CREATE TABLE IF NOT EXISTS activity_logs (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    action VARCHAR(100) NOT NULL,
+    entity_type VARCHAR(50), -- user, message, sale, etc.
+    entity_id INTEGER,
+    details JSONB,
+    ip_address INET,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table des dossiers du Drive
+CREATE TABLE IF NOT EXISTS drive_folders (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    parent_id INTEGER REFERENCES drive_folders(id) ON DELETE CASCADE,
+    created_by INTEGER REFERENCES users(id),
+    description TEXT,
+    color VARCHAR(20) DEFAULT '#3b82f6',
+    is_public BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table des fichiers du Drive
+CREATE TABLE IF NOT EXISTS drive_files (
+    id SERIAL PRIMARY KEY,
+    folder_id INTEGER REFERENCES drive_folders(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(500) NOT NULL,
+    file_size BIGINT NOT NULL,
+    mime_type VARCHAR(100),
+    uploaded_by INTEGER REFERENCES users(id),
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table des permissions d'accès aux dossiers
+CREATE TABLE IF NOT EXISTS drive_folder_permissions (
+    id SERIAL PRIMARY KEY,
+    folder_id INTEGER REFERENCES drive_folders(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    permission_level VARCHAR(20) NOT NULL, -- read, write, admin
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(folder_id, user_id)
+);
+
+-- Index pour améliorer les performances
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_department ON users(department_id);
+CREATE INDEX idx_users_role ON users(role);
+CREATE INDEX idx_messages_conversation ON messages(conversation_id);
+CREATE INDEX idx_messages_sender ON messages(sender_id);
+CREATE INDEX idx_messages_created ON messages(created_at DESC);
+CREATE INDEX idx_sales_user ON sales(user_id);
+CREATE INDEX idx_sales_department ON sales(department_id);
+CREATE INDEX idx_sales_date ON sales(sale_date DESC);
+CREATE INDEX idx_activity_logs_user ON activity_logs(user_id);
+CREATE INDEX idx_activity_logs_created ON activity_logs(created_at DESC);
+CREATE INDEX idx_drive_folders_parent ON drive_folders(parent_id);
+CREATE INDEX idx_drive_folders_created_by ON drive_folders(created_by);
+CREATE INDEX idx_drive_files_folder ON drive_files(folder_id);
+CREATE INDEX idx_drive_files_uploaded_by ON drive_files(uploaded_by);
+CREATE INDEX idx_drive_permissions_folder ON drive_folder_permissions(folder_id);
+CREATE INDEX idx_drive_permissions_user ON drive_folder_permissions(user_id);
+
+-- Insertion de données de test
+
+-- Départements
+INSERT INTO departments (name, description) VALUES
+('Direction', 'Direction générale de l''entreprise'),
+('Commercial', 'Équipe commerciale et ventes'),
+('Technique', 'Développement et support technique'),
+('Marketing', 'Marketing et communication'),
+('RH', 'Ressources humaines');
+
+-- Utilisateurs (mot de passe: password123)
+INSERT INTO users (email, password_hash, first_name, last_name, role, department_id, position) VALUES
+('admin@company.com', '$2b$10$MUVL4uypDtBacp4FFl715.uHS30DEUlgigeA7c4NPeVu4stxeKUHy', 'Admin', 'System', 'admin', 1, 'Directeur Général'),
+('manager@company.com', '$2b$10$MUVL4uypDtBacp4FFl715.uHS30DEUlgigeA7c4NPeVu4stxeKUHy', 'Marie', 'Dubois', 'manager', 2, 'Manager Commercial'),
+('john@company.com', '$2b$10$MUVL4uypDtBacp4FFl715.uHS30DEUlgigeA7c4NPeVu4stxeKUHy', 'John', 'Martin', 'employee', 2, 'Commercial'),
+('sophie@company.com', '$2b$10$MUVL4uypDtBacp4FFl715.uHS30DEUlgigeA7c4NPeVu4stxeKUHy', 'Sophie', 'Bernard', 'employee', 3, 'Développeur'),
+('lucas@company.com', '$2b$10$MUVL4uypDtBacp4FFl715.uHS30DEUlgigeA7c4NPeVu4stxeKUHy', 'Lucas', 'Petit', 'employee', 4, 'Marketing Manager');
+
+-- Ventes de test
+INSERT INTO sales (user_id, department_id, customer_name, product_service, amount, status, sale_date) VALUES
+(3, 2, 'Client ABC', 'Service Premium', 5000.00, 'completed', '2025-11-01'),
+(3, 2, 'Client XYZ', 'Consultation', 2500.00, 'completed', '2025-11-03'),
+(2, 2, 'Client 123', 'Formation', 3500.00, 'completed', '2025-11-05'),
+(3, 2, 'Client DEF', 'Service Standard', 1500.00, 'pending', '2025-11-06'),
+(2, 2, 'Client GHI', 'Support Annuel', 8000.00, 'completed', '2025-11-07');
+
+-- Conversations de test
+INSERT INTO conversations (name, type, created_by) VALUES
+('Équipe Commercial', 'group', 2),
+('Discussion Technique', 'group', 4),
+('Direction', 'direct', 1);
+
+-- Participants des conversations
+-- Conversation 1: Équipe Commercial (Marie, John)
+INSERT INTO conversation_participants (conversation_id, user_id) VALUES
+(1, 2),
+(1, 3);
+
+-- Conversation 2: Discussion Technique (Sophie, Lucas)
+INSERT INTO conversation_participants (conversation_id, user_id) VALUES
+(2, 4),
+(2, 5);
+
+-- Conversation 3: Direction (Admin, Marie)
+INSERT INTO conversation_participants (conversation_id, user_id) VALUES
+(3, 1),
+(3, 2);
+
+-- Messages de test
+INSERT INTO messages (conversation_id, sender_id, content) VALUES
+(1, 2, 'Bonjour l''équipe ! Comment se passent vos rendez-vous cette semaine ?'),
+(1, 3, 'Très bien ! J''ai signé deux nouveaux contrats aujourd''hui 🎉'),
+(1, 2, 'Excellent travail John ! Continue comme ça.'),
+(2, 4, 'Quelqu''un peut m''aider sur le bug de la page d''accueil ?'),
+(2, 5, 'Oui, je regarde ça tout de suite. C''est lié au responsive ?'),
+(2, 4, 'Exactement ! Merci Lucas 👍'),
+(3, 1, 'Marie, peux-tu préparer le rapport mensuel des ventes ?'),
+(3, 2, 'Bien sûr, je te l''envoie d''ici vendredi.');
+
+-- Dossiers du Drive
+INSERT INTO drive_folders (name, parent_id, created_by, description, color, is_public) VALUES
+('Documents Entreprise', NULL, 1, 'Documents officiels et ressources de l''entreprise', '#3b82f6', true),
+('Commercial', NULL, 2, 'Documents commerciaux et propositions', '#10b981', false),
+('Technique', NULL, 4, 'Documentation technique et code', '#f59e0b', false),
+('RH', NULL, 1, 'Documents ressources humaines', '#ef4444', false),
+('Projets', NULL, 1, 'Dossiers de projets en cours', '#7c3aed', false);
+
+-- Sous-dossiers
+INSERT INTO drive_folders (name, parent_id, created_by, description, color) VALUES
+('Contrats', 2, 2, 'Contrats clients', '#10b981'),
+('Propositions', 2, 2, 'Propositions commerciales', '#3b82f6'),
+('Guides', 3, 4, 'Guides techniques', '#f59e0b'),
+('Archives 2024', 1, 1, 'Archives de l''année 2024', '#6b7280');
+
