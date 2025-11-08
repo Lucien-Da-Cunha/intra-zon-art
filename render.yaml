@@ -1,0 +1,57 @@
+services:
+  # Base de données PostgreSQL
+  - type: pserv
+    name: intranet-db
+    plan: free
+    databaseName: intranet_db
+    databaseUser: intranet
+    ipAllowList: []
+
+  # Backend API
+  - type: web
+    name: intranet-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DATABASE_URL
+        fromDatabase:
+          name: intranet-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        fromService:
+          type: web
+          name: intranet-frontend
+          property: host
+    healthCheckPath: /
+    autoDeploy: true
+
+  # Frontend React
+  - type: web
+    name: intranet-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: intranet-backend
+          property: host
+      - key: VITE_WS_URL
+        fromService:
+          type: web
+          name: intranet-backend
+          property: host
+    healthCheckPath: /
+    autoDeploy: true
+
+databases:
+  - name: intranet-db
+    databaseName: intranet_db
+    user: intranet
+    plan: free
