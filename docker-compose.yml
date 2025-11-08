@@ -50,16 +50,12 @@ services:
     platform: linux/arm64
     container_name: intranet-frontend
     environment:
-      - VITE_API_URL=http://localhost:3001
-      - VITE_WS_URL=ws://localhost:3001
+      - VITE_API_URL=http://192.168.1.95:3001
+      - VITE_WS_URL=ws://192.168.1.95:3001
     ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - "80:80"
     depends_on:
       - backend
-    command: npm run dev
 
 volumes:
   postgres_data:
